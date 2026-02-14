@@ -19,7 +19,32 @@ load_dotenv()
 from app.config import settings
 from app.database import Base
 # Import models to ensure they are registered with Base.metadata
+# Import models to ensure they are registered with Base.metadata
 from app.models import *
+
+# === DATABASE URL HANDLING LOGIC ===
+db_url = settings.DATABASE_URL
+if db_url and db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql+asyncpg://", 1)
+elif db_url and db_url.startswith("postgresql://"):
+    db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+connect_args = {}
+
+# Check for sslmode or ssl in URL and handle it manually for asyncpg
+if db_url and "?" in db_url:
+    base_url, query = db_url.split("?", 1)
+    
+    # Strip params that asyncpg complains about
+    # Typical params: sslmode=require, ssl=require, ssl=true
+    if "sslmode=" in query or "ssl=" in query:
+        db_url = base_url
+        connect_args["ssl"] = "require"
+
+# Force SSL for known cloud providers if not already set
+if "neon.tech" in db_url or "aws.com" in db_url:
+    connect_args["ssl"] = "require"
+# ===================================
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -52,7 +77,7 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = settings.DATABASE_URL
+    url = db_url
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -72,12 +97,13 @@ async def run_migrations_online() -> None:
 
     """
     configuration = config.get_section(config.config_ini_section)
-    configuration["sqlalchemy.url"] = settings.DATABASE_URL
+    configuration["sqlalchemy.url"] = db_url
     
     connectable = async_engine_from_config(
         configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args=connect_args,
     )
 
     async with connectable.connect() as connection:
