@@ -9,10 +9,21 @@ if db_url and db_url.startswith("postgres://"):
 elif db_url and db_url.startswith("postgresql://"):
     db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-# Configure engine with SSL if needed (Neon usually requires it)
 connect_args = {}
+
+# Check for sslmode or ssl in URL and handle it manually for asyncpg
+if db_url and "?" in db_url:
+    base_url, query = db_url.split("?", 1)
+    
+    # Strip params that asyncpg complains about
+    # Typical params: sslmode=require, ssl=require, ssl=true
+    if "sslmode=" in query or "ssl=" in query:
+        db_url = base_url
+        connect_args["ssl"] = "require"
+
+# Force SSL for known cloud providers if not already set
 if "neon.tech" in db_url or "aws.com" in db_url:
-    connect_args = {"ssl": "require"}
+    connect_args["ssl"] = "require"
 
 engine = create_async_engine(
     db_url, 
